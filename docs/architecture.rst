@@ -1,83 +1,83 @@
 Arquitectura del sistema
 =======================
 
-Visión general
----------------
+Este documento describe la arquitectura del proyecto, sus componentes principales y el flujo de datos.
 
-Este documento describe la arquitectura de alto nivel del sistema: componentes, flujo de datos,
-responsabilidades y consideraciones operativas para despliegue y gobernanza.
-
-Diagrama (Mermaid)
--------------------
+Diagrama de componentes
+-----------------------
 
 .. code-block:: mermaid
 
    flowchart LR
      subgraph Frontend
-       A[React + Vite (`src/`)]
+       A[React + Vite]\n       A2[src/]
      end
      subgraph Backend
-       B[FastAPI (`api/main.py`)]
+       B[FastAPI]\n       B2[api/main.py]
      end
-     Data[(`app/data/`, `data/`)]
-     Models[(`models/`, `*.joblib`)]
-     Notebooks[`notebooks/`]
-     Storage[("Artefactos: S3 / Filesystem / Registry")]
+     Data[app/data/ + data/]
+     Models[api/*.joblib + models/]
+     Notebooks[notebooks/]
+     Storage["Artefactos / S3 / Filesystem"]
 
-     A -->|HTTP / REST| B
-     B -->|read/write| Data
-     B -->|load model bundles| Models
-     Notebooks -->|produce artifacts| Models
-     Notebooks --> Data
-     Models --> Storage
-     B -->|metrics/logs| Observability(("Logs / Metrics / Tracing"))
+     A -->|HTTP/JSON| B
+     B -->|lee/escribe| Data
+     B -->|carga| Models
+     Notebooks -->|genera| Models
+     Notebooks -->|produce| Data
+     B -->|logs/métricas| Observability
 
-Componentes y responsabilidades
--------------------------------
+Componentes clave
+-----------------
 
-- **Frontend (`src/`)**: interfaz React para interacción clínica, visualizaciones (PCA) y consumo de APIs.
-- **Backend (`api/main.py`)**: FastAPI expone endpoints de inferencia y análisis estático; carga bundles `joblib`.
-- **Data (`app/data/`, `data/`)**: almacenamiento de datos raw, interim y processed; `clusters_GOi.csv` y dataset preprocesado.
-- **Modelos (`models/`)**: artefactos serializados (`joblib`) con metadatos (`feature_cols`, `threshold`, `model_version`).
-- **Notebooks**: fuente de verdad para exploración, selección de variables y generación de artefactos.
-- **Observability**: sistema para logs estructurados, métricas de inferencia y alertas operativas.
+- **Frontend (`src/`)**
+  - Dashboard React.
+  - Consume endpoints REST del backend.
+  - Visualiza resultados, SHAP y clustering.
+- **Backend (`api/main.py`)**
+  - Exposición de endpoints FastAPI.
+  - Carga bundles `joblib` en background.
+  - Calcula predicciones globales y por dominio.
+- **Datos (`app/data/`, `data/`)**
+  - `raw/`: datos de origen.
+  - `interim/`: datos transformados.
+  - `processed/`: datos listos para análisis.
+- **Modelos**
+  - Bundles con `feature_cols`, `threshold` y metadata.
+  - Se almacenan como artefactos reproducibles.
+- **Notebooks**
+  - Documentan selección de variables y definición de clusters.
 
-Patrones y contratos
---------------------
+Flujo de trabajo
+----------------
 
-- API: usar JSON schemas para entradas (`/api/predecir`) y salidas (predicción + `shap` + `meta`). Documentar con OpenAPI.
-- Model bundle: cada bundle debe incluir `feature_cols`, `threshold`, `metrics` y `model_version` en su metadata.
-- Datos: establecer esquemas por etapa (raw→interim→processed) y validar con `pandera` o similar.
+1. Los notebooks generan artefactos y definiciones de variables.
+2. Los bundles se serializan como `joblib` en `api/`.
+3. El backend carga los bundles al iniciar.
+4. El frontend solicita predicciones y datos de cluster.
+5. El backend devuelve resultados y explicaciones SHAP.
 
-ML lifecycle y artefactos
--------------------------
-
-- Entrenamiento y validación se realizan en notebooks o pipelines reproducibles.
-- Artefactos validados se serializan como bundles `joblib` y se registran con metadata y checksum.
-- Versionado semántico de modelos y retención de registros experimentales (MLflow/MLMD opcional).
-
-Despliegue y entornos
+Endpoints principales
 ---------------------
 
-- Soporte para `docker` y contenedores: `Dockerfile` ya presente; definir imágenes para `api` y `frontend`.
-- Variables de entorno claras por entorno (dev/staging/prod) y `.env.example` documentado.
-- Estrategia recomendada: entorno staging con tests de integridad de bundles antes del rollout en producción.
+- `GET /health`
+- `POST /api/predecir`
+- `GET /api/modelo-info`
+- `GET /api/threshold-table`
+- `GET /api/pca-clusters`
+- `GET /api/cluster-domain-analysis`
+- `GET /api/debug-bundles`
 
-Observabilidad y gobernanza
----------------------------
+Buenas prácticas
+----------------
 
-- Logs estructurados (JSON) con `timestamp`, `level`, `component`, `request_id`, `model_version`.
-- Métricas: latencia de inferencia, tasa de errores, uso de memoria, número de `bundles` cargados.
-- Políticas de privacidad: catalogar columnas sensibles, anonimizar datos cuando proceda y documentar retenciones.
-
-Runbook mínimo
---------------
-
-- Cómo arrancar localmente: Backend (Uvicorn) y Frontend (Vite).
-- Verificar `health` endpoint y bundles cargados.
-- Procedimiento para reemplazar un bundle (validar checksum → mover a `models/` → reiniciar servicio).
+- Mantener `api/.venv`, `venv/`, `node_modules/`, `dist/` y `docs/_build/` fuera del control de versiones.
+- Guardar modelos y artefactos reproducibles en `api/` y `models/`.
+- Mantener documentación técnica en `docs/` y resúmenes en `REPO_DOCUMENTATION.md`.
 
 Referencias
 -----------
 
-- Ver `REPO_DOCUMENTATION.md` para instrucciones de alto nivel y `docs/predictive-model.rst` para detalles del predictor.
+- `docs/predictive-model.rst`: inferencia y modelo.
+- `docs/clustering.rst`: análisis de clustering.
+- `docs/getting-started.rst`: guía de arranque.

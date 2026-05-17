@@ -1,65 +1,114 @@
-prediccion-ci-prematuros-madre-canguro
-==============================
+﻿# Predicción CI Prematuros - Método Madre Canguro
 
-El proyecto surge de la Fundación Canguro, ONG colombiana líder en la investigación y difusión del Método Madre Canguro (MMC) a nivel global. Desde 1978, la Fundación encabeza un estudio de seguimiento longitudinal pionero que compara el MMC frente al cuidado en incubadora mediante ensayos controlados aleatorizados. Los resultados, sustentados en neuroimágenes y tests cognitivos, demuestran que el MMC favorece significativamente el desarrollo neurológico y cognitivo del prematuro hasta la adultez.
+Esta plataforma integra un backend de inferencia clínica con FastAPI y un frontend interactivo en React/Vite para visualizar predicciones, explicabilidad SHAP y análisis de clustering.
 
-Este repositorio integra un backend de inferencia en FastAPI con un frontend React/Vite que muestra resultados clínicos, predicciones de riesgo y explicabilidad SHAP mediante gráficos nativos.
+## Contenido del repositorio
 
-Project Organization
-------------
+- `api/`: backend FastAPI, cargas de modelos `joblib`, endpoints de inferencia y análisis.
+- `app/`: datos procesados y utilidades de aplicación.
+- `src/`: frontend React/Vite.
+- `data/`: datos `raw`, `interim` y `processed`.
+- `models/`: artefactos y modelos entrenados.
+- `notebooks/`: exploración, clustering y validación en Jupyter.
+- `docs/`: documentación técnica Sphinx.
+- `REPO_DOCUMENTATION.md`: documentación complementaria.
+- `requirements.txt`: dependencias Python.
+- `package.json`: dependencias y scripts frontend.
+- `Makefile`: comandos de soporte y sincronización.
+- `setup.py`: configuración del paquete Python instalable.
+- `tox.ini`: configuración de pruebas y calidad.
 
-    ├── LICENSE
-    ├── Makefile           <- Makefile with commands like `make data` or `make train`
-    ├── README.md          <- The top-level README for developers using this project.
-    ├── data
-    │   ├── external       <- Data from third party sources.
-    │   ├── interim        <- Intermediate data that has been transformed.
-    │   ├── processed      <- The final, canonical data sets for modeling.
-    │   └── raw            <- The original, immutable data dump.
-    │
-    ├── docs               <- A default Sphinx project; see sphinx-doc.org for details
-    │
-    ├── models             <- Trained and serialized models, model predictions, or model summaries
-    │
-    ├── notebooks          <- Jupyter notebooks. Naming convention is a number (for ordering),
-    │                         the creator's initials, and a short `-` delimited description, e.g.
-    │                         `1.0-jqp-initial-data-exploration`.
-    │
-    ├── references         <- Data dictionaries, manuals, and all other explanatory materials.
-    │
-    ├── reports            <- Generated analysis as HTML, PDF, LaTeX, etc.
-    │   └── figures        <- Generated graphics and figures to be used in reporting
-    │
-    ├── api                <- Backend FastAPI service con inferencia, SHAP y análisis de clustering.
-    ├── requirements.txt   <- The requirements file for reproducing the analysis environment, e.g.
-    │                         generated with `pip freeze > requirements.txt`
-    │
-    ├── setup.py           <- makes project pip installable (pip install -e .) so src can be imported
-    ├── src                <- Source code for use in this project.
-    │   ├── __init__.py    <- Makes src a Python module
-    │   │
-    │   ├── data           <- Scripts to download or generate data
-    │   │   └── make_dataset.py
-    │   │
-    │   ├── features       <- Scripts to turn raw data into features for modeling
-    │   │   └── build_features.py
-    │   │
-    │   ├── models         <- Scripts to train models and then use trained models to make
-    │   │   │                 predictions
-    │   │   ├── predict_model.py
-    │   │   └── train_model.py
-    │   │
-    │   └── visualization  <- Scripts to create exploratory and results oriented visualizations
-    │       └── visualize.py
-    │
-    └── tox.ini            <- tox file with settings for running tox; see tox.readthedocs.io
+## Componentes clave
 
+- Backend: `api/main.py`
+- Frontend: `src/App.jsx`
+- Bundles de modelo:
+  - `api/kmc20_model_bundle_calibrated.joblib`
+  - `api/m8_modelo_binary_best.joblib`
+  - `api/m9_tap_bundle.joblib`
+  - `api/m10_cvlt_bundle.joblib`
+- Datos de análisis y clusters:
+  - `app/data/processed/kmc_dataset_procesado_completo.csv`
+  - `app/data/processed/clusters_GOi.csv`
 
-Additional documentation:
+## Inicio rápido
 
-    ├── REPO_DOCUMENTATION.md <- Documento específico con la arquitectura del repositorio,
-    │                           flujo backend/frontend, análisis de clustering y pasos de ejecución.
+### 1. Preparar el backend
 
---------
+```powershell
+cd api
+python -m venv .venv
+. .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
 
-<p><small>Project based on the <a target="_blank" href="https://drivendata.github.io/cookiecutter-data-science/">cookiecutter data science project template</a>. #cookiecutterdatascience</small></p>
+### 2. Ejecutar el backend
+
+```powershell
+cd api
+python run_server.py
+```
+
+### 3. Preparar el frontend
+
+```powershell
+cd ..
+npm install
+$env:VITE_API_URL="http://localhost:8000"
+npm run dev
+```
+
+### 4. Verificar la instalación
+
+- `http://localhost:8000/health`
+- `http://localhost:3000`
+
+## Carga de JSON
+
+El frontend permite subir un JSON clínico que se mapea a los campos del formulario.
+Hay un ejemplo de referencia en `example_caso_clinico_riesgo.json` con la estructura aceptada.
+
+> Nota: los datos de `example_caso_clinico_riesgo.json` son ficticios y de ejemplo; no contienen información real ni violan la confidencialidad.
+
+La estructura mínima incluye campos como:
+
+- `pc_nacer_mm`
+- `eg_semanas`
+- `pc_40sem_cm`
+- `dias_oxigeno`
+- `educ_materna`
+- `griffiths_auditivo`
+
+También se aceptan campos opcionales como:
+
+- `grupo`
+- `horas_canguro`
+- `dias_hospitalizacion`
+- `fototerapia`
+- `ingreso_percapita`
+- `griffiths_motor`
+- `griffiths_general`
+- `peso_12m_g`
+- `talla_12m_cm`
+- `griffiths_loco12`
+
+El formulario acepta tanto los nombres actuales como algunos antiguos equivalentes,
+por ejemplo `pc_nacer` o `peso_nacer` en lugar de `pc_nacer_mm` y `peso_nacer_g`.
+
+## Docker
+
+```powershell
+docker compose up --build
+```
+
+## Documentación
+
+- `docs/`: sitio de documentación Sphinx.
+- `QUICKSTART.md`: guía de inicio rápido.
+- `REPO_DOCUMENTATION.md`: resumen de arquitectura y flujo.
+
+## Buenas prácticas
+
+- No subir entornos virtuales (`venv/`, `.venv/`).
+- No subir dependencias de Node (`node_modules/`).
+- Mantener `dist/` y `docs/_build/` fuera del repositorio.

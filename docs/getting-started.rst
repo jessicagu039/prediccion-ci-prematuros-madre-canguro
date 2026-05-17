@@ -1,78 +1,97 @@
 Getting started
 ===============
 
-This is where you describe how to get set up on a clean install, including the
-commands necessary to get the raw data (using the `sync_data_from_s3` command,
-for example), and then how to make the cleaned, final data sets.
+Esta guía explica cómo poner en marcha el proyecto desde cero.
 
-Backend and frontend setup
+Configuración del backend
+-------------------------
+
+1. Ir a la carpeta del backend:
+
+```powershell
+cd api
+```
+
+2. Crear y activar el entorno virtual:
+
+```powershell
+python -m venv .venv
+. .venv\Scripts\Activate.ps1
+```
+
+3. Instalar dependencias:
+
+```powershell
+pip install -r requirements.txt
+```
+
+4. Iniciar el servidor:
+
+```powershell
+python run_server.py
+```
+
+El backend quedará disponible en `http://localhost:8000`.
+
+Configuración del frontend
 --------------------------
 
-1. Install the Python dependencies:
+1. Desde la raíz del repositorio:
 
-```bash
-pip install -r requirements.txt
-pip install -e .
-```
-
-2. Start the backend API:
-
-```bash
-uvicorn api.main:app --host 0.0.0.0 --port 8000
-```
-
-3. Install Node dependencies and start the frontend:
-
-```bash
+```powershell
 npm install
+```
+
+2. Iniciar el frontend:
+
+```powershell
+$env:VITE_API_URL="http://localhost:8000"
 npm run dev
 ```
 
-4. Open the Vite development URL in your browser.
+3. Abrir `http://localhost:3000` en el navegador.
 
-Documentation links
--------------------
+Endpoints principales
+~~~~~~~~~~~~~~~~~~~~~~
 
-- See the clustering analysis documentation in :doc:`clustering`.
-- See model inference and predictor details in :doc:`predictive-model`.
-- The repository contains notebook sources for domain clustering in
-  `notebooks/clustering-models/`.
+- `GET /health`
+- `POST /api/predecir`
+- `GET /api/modelo-info`
+- `GET /api/threshold-table`
+- `GET /api/pca-clusters`
+- `GET /api/cluster-domain-analysis`
+- `GET /api/debug-bundles`
 
-Docker / Production
--------------------
+Carga de JSON
+~~~~~~~~~~~~~~
 
-We provide a `docker-compose.yml` that builds and runs both the API and the
-frontend (served by nginx). This is the recommended quick way to run the
-application locally or in a containerized environment.
+El frontend permite subir un archivo JSON con los datos clínicos del paciente.
+El ejemplo de referencia se encuentra en `example_caso_clinico_riesgo.json` en la raíz del repositorio.
 
-Build and start everything:
+.. note::
+   `example_caso_clinico_riesgo.json` contiene datos ficticios de ejemplo y no viola la confidencialidad.
 
-```bash
+Documentación relacionada
+-------------------------
+
+- `docs/clustering.rst` para análisis de clustering.
+- `docs/predictive-model.rst` para el flujo de inferencia.
+- `docs/architecture.rst` para detalles de arquitectura.
+
+Docker
+------
+
+Para ejecutar el stack con Docker:
+
+```powershell
 docker compose up --build
 ```
 
-By default the services are exposed at:
-
 - Backend: `http://localhost:8000`
-- Frontend (nginx): `http://localhost:3000`
+- Frontend: `http://localhost:3000`
 
-Runtime frontend configuration
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Notas
+-----
 
-The frontend supports runtime injection of the API URL so you don't need to
-rebuild the static files when pointing to a different backend. The nginx
-container writes `/env-config.js` into the served files; the app loads it from
-`/env-config.js` and sets `window.__API_URL`.
-
-Example HTML snippet to set the API URL at deploy time (insert before
-loading the app):
-
-```html
-<script>
-  // runtime override (example)
-  window.__API_URL = "https://mi-backend.example.com";
-</script>
-<script type="module" src="/src/main.jsx"></script>
-```
-
-See also the repo-level Docker notes in the `REPO_DOCUMENTATION.md` file.
+- `api/.venv`, `venv/`, `node_modules/` y `dist/` no deben subirse al repositorio.
+- Mantén los modelos `.joblib` dentro de `api/`.

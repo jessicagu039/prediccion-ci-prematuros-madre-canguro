@@ -1,76 +1,65 @@
 Clustering analysis
 ===================
 
-This page documents the domain-specific clustering analysis available in the project.
-It links the backend API, the frontend dashboard, and the notebook sources used to build
-cluster variants for CVLT, TAP, and WASI.
+Este documento describe el análisis de clustering por dominio y su integración con el backend y el frontend.
 
-Overview
+Resumen
 --------
 
-The repository includes an analysis pipeline for three domain-specific cluster variants:
+El proyecto incluye análisis de clustering para tres dominios:
 
-- **CVLT**: verbal memory and recall profiles.
-- **TAP**: attention and working memory performance.
-- **WASI**: general intellectual functioning measured by Full Scale IQ.
+- **CVLT**: perfiles de memoria verbal.
+- **TAP**: atención y memoria de trabajo.
+- **WASI**: rendimiento intelectual global.
 
-The domain clustering metadata is defined in `api/main.py` and connected to
-`app/data/processed/clusters_GOi.csv` for cohort-level summaries.
+Los datos de cluster se alimentan desde `app/data/processed/clusters_GOi.csv`.
 
-Backend endpoints
------------------
+Endpoints de backend
+--------------------
 
-The FastAPI backend exposes the following endpoints for cluster and PCA analysis:
+- `GET /api/pca-clusters`
+  - Devuelve la proyección PCA global de los datos procesados.
+  - Incluye coordenadas `pc1`, `pc2`, etiquetas de cluster y conteos.
+- `GET /api/cluster-domain-analysis`
+  - Devuelve análisis por variante de dominio (`cvlt`, `tap`, `wasi`).
+  - Incluye estadísticas de completitud, resumen de valores y resultados PCA.
 
-- `/api/pca-clusters`
-  - returns the global PCA projection of the processed dataset
-  - includes point coordinates, explained variance, cluster labels, and counts
-- `/api/cluster-domain-analysis`
-  - returns domain-specific cluster variants for CVLT, TAP, and WASI
-  - includes PCA projections, cohort counts, and metadata for each variant
-
-Source notebooks
-----------------
-
-The notebooks that define and document the domain clustering variants are:
+Notebooks de referencia
+-----------------------
 
 - `notebooks/clustering-models/Clustering_CVLT_GOi_v1.ipynb`
 - `notebooks/clustering-models/Clustering_TAP_GOi_v1.ipynb`
 - `notebooks/clustering-models/Clustering_WASI_GOi_v1.ipynb`
 
-These notebooks are the source of truth for:
+Estos notebooks documentan:
 
-- variable selection for each domain
-- cluster labelling rules
-- PCA and group summary visualizations
+- selección de variables por dominio.
+- reglas de etiquetado GO-i.
+- generación de proyecciones PCA y visualizaciones de clusters.
 
-Frontend integration
+Integración frontend
 --------------------
 
-The React dashboard in `src/App.jsx` consumes the backend endpoints and renders:
+El dashboard React consume los endpoints del backend para renderizar:
 
-- a global PCA scatter plot for the full dataset
-- a summary panel with cluster counts and explained variance
-- separate domain cards for CVLT, TAP, and WASI with
-  individual PCA projections and cohort cluster summaries
+- scatter plot PCA global.
+- paneles de conteo por cluster.
+- tarjetas de dominio para CVLT, TAP y WASI.
 
-Data files
-----------
+Archivos de datos
+-----------------
 
 - `app/data/processed/kmc_dataset_procesado_completo.csv`
-  - processed cohort dataset used for PCA visualization
 - `app/data/processed/clusters_GOi.csv`
-  - GO-i cluster labels used for coloring the PCA projection
 
-How to use
-----------
+Uso
+---
 
-1. Start the backend API with Uvicorn.
-2. Start the frontend with Vite.
-3. Open the analysis dashboard and navigate to the "Análisis de clusters" section.
+1. Iniciar el backend con `python run_server.py`.
+2. Iniciar el frontend con `npm run dev`.
+3. Abrir el dashboard y navegar a la sección de clustering.
 
-Notes
+Notas
 -----
 
-The clustering variants are intentionally separated from the KMC prediction workflow.
-They provide an orthogonal exploratory view of cognitive profiles and cohort structure.
+El análisis de clustering es complementario a la predicción KMC y permite explorar perfiles cognitivos y estructuración de cohortes.

@@ -1,147 +1,92 @@
 # Quickstart
 
-Esta guía ordena los pasos para levantar el proyecto en desarrollo local y con Docker.
+Guía rápida para levantar el proyecto en desarrollo local y con Docker.
 
-## 1. Requisitos previos
+## Requisitos previos
 
 - Python 3.8+ (se recomienda 3.11)
 - Node 20+ y npm
-- Git (para clonar el repositorio)
-- (Opcional) Docker y Docker Compose
+- Git
+- Docker y Docker Compose (opcional)
 
-> Nota: el frontend en Docker usa `node:20-alpine` para construir la aplicación porque Vite requiere Node.js 20.19+ o 22.12+.
+## Clonar el repositorio
 
-El frontend consume datos del backend y renderiza gráficos nativos (SHAP, PCA/clusters, etc.) en lugar de depender de imágenes estáticas.
-
-## 2. Clonar el repositorio
-
-```bash
+```powershell
 git clone <repo-url>
 cd <repo-folder>
 ```
 
-Reemplaza `<repo-url>` y `<repo-folder>` con la URL del repositorio y la carpeta local correspondiente.
+## Desarrollo local
 
-## 3. Desarrollo local sin Docker
-
-### 3.1 Preparar el backend
-
-```bash
-cd api
-python -m venv .venv
-```
-
-- Windows (PowerShell):
+### Backend
 
 ```powershell
+cd api
+python -m venv .venv
 . .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-- Linux / macOS (bash):
+### Ejecutar el backend
 
-```bash
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 3.2 Ejecutar el backend
-
-Desde `api`:
-
-```bash
+```powershell
+cd api
 python run_server.py
 ```
 
-El backend debería quedar disponible en `http://localhost:8000`.
+El backend estará disponible en `http://localhost:8000`.
 
-### 3.3 Preparar y ejecutar el frontend
+### Frontend
 
-Abre una nueva terminal y ejecuta desde la raíz del repositorio:
-
-```bash
-npm install
-```
-
-- Windows (PowerShell):
+En otra terminal, desde la raíz del repositorio:
 
 ```powershell
-$env:VITE_API_URL = "http://localhost:8000"
+npm install
+$env:VITE_API_URL="http://localhost:8000"
 npm run dev
 ```
 
-- Linux / macOS (bash):
+El frontend debería abrirse en `http://localhost:3000`.
 
-```bash
-export VITE_API_URL=http://localhost:8000
-npm run dev
-```
+## Verificar la instalación
 
-El frontend debería quedar disponible en `http://localhost:3000` o en la URL que muestre Vite.
-
-## 4. Verificar la instalación
-
-- Revisar que el backend responda:
-
-```bash
+```powershell
 curl http://localhost:8000/health
 ```
 
-- Abrir el frontend en el navegador:
+Abrir `http://localhost:3000` en el navegador.
 
-`http://localhost:3000`
+## Carga de JSON
 
-## 5. Uso de Docker (opcional)
+El frontend permite subir un archivo `.json` con los datos clínicos del paciente.
+Usa `example_caso_clinico_riesgo.json` como referencia de la arquitectura de datos.
 
-Si prefieres usar contenedores, asegúrate de tener Docker y Docker Compose instalados.
+> Nota: `example_caso_clinico_riesgo.json` contiene datos de ejemplo inventados y no viola ningún requisito de confidencialidad.
 
-### 5.1 Instalar Docker (opcional)
+## Docker
 
-- Windows: instala Docker Desktop desde https://docs.docker.com/desktop/install/windows-install/
-- macOS: instala Docker Desktop desde https://docs.docker.com/desktop/install/mac-install/
-- Linux: sigue la guía oficial para tu distribución en https://docs.docker.com/engine/install/
+Para levantar el stack completo con Docker:
 
-### 5.2 Verificar Docker
-
-```bash
-docker --version
-docker compose version
-```
-
-En Linux, si deseas usar Docker sin `sudo`:
-
-```bash
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-### 5.3 Levantar el proyecto con Docker
-
-Desde la raíz del repositorio:
-
-```bash
+```powershell
 docker compose up --build
 ```
 
-- Frontend: `http://localhost:3000`
 - Backend: `http://localhost:8000`
+- Frontend: `http://localhost:3000`
 
-> Importante: cuando accedes al frontend en el navegador, no uses `http://api:8000`.
-> Ese host solo existe dentro de la red de Docker. Para la app en tu navegador, la URL correcta del backend local es `http://localhost:8000`.
+> No uses `http://api:8000` desde el navegador; ese host solo existe dentro de la red de Docker.
 
-## 6. Despliegue y configuración de la URL del backend
+## Endpoints relevantes
 
-Si despliegas el frontend como archivos estáticos y necesitas apuntar a otro backend sin reconstruir:
+- `GET /health`
+- `POST /api/predecir`
+- `GET /api/modelo-info`
+- `GET /api/threshold-table`
+- `GET /api/pca-clusters`
+- `GET /api/cluster-domain-analysis`
+- `GET /api/debug-bundles`
 
-```html
-<script>
-  window.__API_URL = "https://mi-backend.example.com";
-</script>
-<script type="module" src="/src/main.jsx"></script>
-```
+## Notas
 
-## 7. Notas importantes
-
-- Verifica que los archivos de modelos (`*.joblib`, `*.json`) existan en las rutas esperadas.
-- No guardes secretos en texto plano: usa variables de entorno o un gestor de secretos.
-- Si el frontend no se conecta al backend, revisa que `VITE_API_URL` apunte correctamente a `http://localhost:8000`.
+- Mantén los modelos `joblib` en la carpeta `api/`.
+- No incluyas archivos de entorno ni dependencias instaladas en el repositorio.
