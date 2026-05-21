@@ -58,6 +58,8 @@ $env:VITE_API_URL="http://localhost:8000"
 npm run dev
 ```
 
+> Nota: el frontend usa por defecto la URL remota original. Solo es necesario pasar `VITE_API_URL=http://localhost:8000` cuando el backend se ejecuta localmente o dentro de Docker.
+
 ### 4. Verificar la instalación
 
 - `http://localhost:8000/health`
@@ -97,8 +99,17 @@ por ejemplo `pc_nacer` o `peso_nacer` en lugar de `pc_nacer_mm` y `peso_nacer_g`
 
 ## Docker
 
+### Stack completo (Backend + Frontend)
+
 ```powershell
 docker compose up --build
+```
+
+### Solo backend
+
+```powershell
+docker build -f Dockerfile.backend -t mi-backend:latest .
+docker run -p 8000:8000 mi-backend:latest
 ```
 
 ## Documentación

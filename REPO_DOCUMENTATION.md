@@ -245,7 +245,9 @@ curl http://localhost:8000/health
 
 ### Docker / docker-compose
 
-Se provee un `docker-compose.yml` que construye dos servicios: `api` (backend) y `frontend` (build de Vite servido por nginx).
+#### Stack completo (Backend + Frontend)
+
+Se provee un `docker-compose.yml` que orquesta dos servicios: `api` (backend) y `frontend` (React + Vite, servido por nginx).
 
 Construir y levantar:
 
@@ -258,13 +260,31 @@ Esto expondrá por defecto:
 - Backend: `http://localhost:8000`
 - Frontend: `http://localhost:3000` (nginx)
 
-Si necesitas cambiar la URL del backend que el frontend usa, sobreescribe la variable de entorno `API_URL` en el servicio `frontend` del `docker-compose.yml`, o ejecutar:
+#### Backend independiente
+
+Para builds solo del backend:
 
 ```bash
-API_URL=http://mi-backend:8000 docker compose up --build
+docker build -f Dockerfile.backend -t mi-backend:latest .
+docker run -p 8000:8000 mi-backend:latest
 ```
 
-El contenedor frontend genera en tiempo de inicio el archivo `env-config.js` que define `window.__API_URL`, permitiendo apuntar a distintos backends sin rebuild.
+#### Configuración de backend remoto
+
+Si necesitas apuntar el frontend a un backend diferente, establece `VITE_API_URL` en el servicio frontend del `docker-compose.yml`, o ejecuta:
+
+```bash
+VITE_API_URL=http://mi-backend:8000 docker compose up --build
+```
+
+En Docker, el contenedor frontend genera dinámicamente `env-config.js` en tiempo de inicio, inyectando `window.__API_URL` para permitir cambios de backend sin rebuild.
+
+#### Dockerfiles disponibles
+
+- `Dockerfile.backend` — Build solo del backend.
+- `Dockerfile.frontend` — Build solo del frontend.
+
+Ver `docker/README.md` para más detalles.
 
 ### 7.2 Frontend React
 
@@ -312,7 +332,11 @@ python api/run_server.py
 
 Frontend:
 
-El frontend lee `VITE_API_URL` en tiempo de build/ejecución a través de `import.meta.env.VITE_API_URL`.
+El frontend resuelve la URL del backend en el siguiente orden de prioridad:
+
+1. `window.__API_URL` (inyectado en runtime por `docker/frontend-entrypoint.sh` en Docker)
+2. `import.meta.env.VITE_API_URL` (variable de build/development)
+3. Fallback: `https://44.201.230.38.nip.io` (URL remota original)
 
 En desarrollo:
 

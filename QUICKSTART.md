@@ -46,6 +46,8 @@ $env:VITE_API_URL="http://localhost:8000"
 npm run dev
 ```
 
+> Nota: el frontend usa por defecto la URL remota original. Solo es necesario pasar `VITE_API_URL=http://localhost:8000` cuando el backend se ejecuta localmente o dentro de Docker.
+
 El frontend debería abrirse en `http://localhost:3000`.
 
 ## Verificar la instalación
@@ -65,7 +67,7 @@ Usa `example_caso_clinico_riesgo.json` como referencia de la arquitectura de dat
 
 ## Docker
 
-Para levantar el stack completo con Docker:
+### Stack completo (Backend + Frontend)
 
 ```powershell
 docker compose up --build
@@ -74,7 +76,21 @@ docker compose up --build
 - Backend: `http://localhost:8000`
 - Frontend: `http://localhost:3000`
 
-> No uses `http://api:8000` desde el navegador; ese host solo existe dentro de la red de Docker.
+### Solo backend
+
+```powershell
+docker build -f Dockerfile.backend -t mi-backend:latest .
+docker run -p 8000:8000 mi-backend:latest
+```
+
+> Nota: No uses `http://api:8000` desde el navegador en Docker Compose; ese host solo existe dentro de la red de contenedores.
+
+## Estructura de Dockerfiles
+
+- `Dockerfile` — Referencia histórica (deprecado)
+- `Dockerfile.backend` — Build solo del backend
+- `Dockerfile.frontend` — Build solo del frontend
+- `docker-compose.yml` — Orquestación completa del stack
 
 ## Endpoints relevantes
 

@@ -49,6 +49,10 @@ $env:VITE_API_URL="http://localhost:8000"
 npm run dev
 ```
 
+.. note::
+   El frontend usa por defecto la URL remota original. Solo es necesario pasar
+   `VITE_API_URL=http://localhost:8000` cuando el backend se ejecuta localmente o dentro de Docker.
+
 3. Abrir `http://localhost:3000` en el navegador.
 
 Endpoints principales

@@ -9,12 +9,12 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API CONFIG
-// En desarrollo: http://localhost:8000
-// En producción: cambiar a la URL real del servidor
+// Por defecto usa la URL remota original.
+// Para desarrollo local / Docker, sobreescribe con VITE_API_URL o window.__API_URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-//const API_URL = import.meta.env.VITE_API_URL || 'https://44.201.230.38.nip.io';
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const runtimeApiUrl = typeof window !== 'undefined' ? window.__API_URL : undefined;
+const API_URL = runtimeApiUrl || import.meta.env.VITE_API_URL || 'https://54.161.234.170.nip.io';
 // ─────────────────────────────────────────────────────────────────────────────
 // IMÁGENES DE EVIDENCIA CIENTÍFICA
 // Exportar desde Databricks con: fig.savefig("nombre.png", dpi=150, bbox_inches="tight", facecolor="white")
