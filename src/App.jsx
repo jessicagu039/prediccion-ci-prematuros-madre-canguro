@@ -275,7 +275,7 @@ const PCAGlobalSummary = ({ points = [], clusterCounts = {}, clusterLabels = {},
         <p className="text-xs uppercase font-black tracking-[0.2em] text-slate-400 mb-2">Qué muestra este gráfico</p>
         <p className="text-sm text-slate-600 leading-relaxed">
           PCA 2D sobre todas las variables numéricas del dataset procesado. Cada punto es un participante
-          coloreado según su etiqueta GO-i de <span className="font-semibold text-slate-800">clusters_GOi.csv</span>.
+          coloreado según su etiqueta GO-i.
         </p>
       </div>
       <div>
@@ -357,7 +357,7 @@ const ClusterDomainCard = ({ variant }) => {
                 <span className="font-black">{variant.summary.count}</span>
               </div>
               <div className="flex justify-between">
-                <span>Compleción de variables</span>
+                <span>Completitud de variables</span>
                 <span className="font-black">{variant.summary.complete_pct}%</span>
               </div>
               <div className="flex justify-between">
@@ -1792,8 +1792,8 @@ export default function App() {
         <div className="text-center mb-8">
           <h2 className="text-3xl font-black text-slate-900 tracking-tight">Análisis de clusters</h2>
           <p className="text-slate-500 text-sm max-w-3xl mx-auto">
-            Esta sección es independiente del KMC Predictor. Aquí puedes revisar la visualización PCA
-            de los clusters del proyecto y comprender la estructura global del dataset.
+            En esta sección puedes revisar información adicional sobre la visualización PCA
+            de los clusters del proyecto.
           </p>
         </div>
         {pcaLoading ? (

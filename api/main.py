@@ -82,7 +82,7 @@ CLUSTER_DOMAIN_VARIANTS = [
         "key": "cvlt",
         "title": "CVLT",
         "module": "CVLT",
-        "description": "Agrupa perfiles de memoria verbal usando 8 variables CVLT seleccionadas en el notebook de clustering.",
+        "description": "Agrupa perfiles de memoria verbal usando 8 variables CVLT seleccionadas.",
         "labelling": "GO-1 = mayor memoria verbal y mayor FSIQ; GO-2 = menor memoria verbal.",
         "variables": [
             "CVLT_Trial1a4Total",
