@@ -12,6 +12,9 @@ Contents:
    :maxdepth: 2
 
    getting-started
+   architecture
+   predictive-model
+   clustering
    commands
 
 

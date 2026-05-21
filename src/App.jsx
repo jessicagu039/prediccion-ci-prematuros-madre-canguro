@@ -9,11 +9,12 @@ import {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // API CONFIG
-// En desarrollo: http://localhost:8000
-// En producción: cambiar a la URL real del servidor
+// Por defecto usa la URL remota original.
+// Para desarrollo local / Docker, sobreescribe con VITE_API_URL o window.__API_URL.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const API_URL = import.meta.env.VITE_API_URL || 'https://44.201.230.38.nip.io';
+const runtimeApiUrl = typeof window !== 'undefined' ? window.__API_URL : undefined;
+const API_URL = runtimeApiUrl || import.meta.env.VITE_API_URL || 'https://54.161.234.170.nip.io';
 // ─────────────────────────────────────────────────────────────────────────────
 // IMÁGENES DE EVIDENCIA CIENTÍFICA
 // Exportar desde Databricks con: fig.savefig("nombre.png", dpi=150, bbox_inches="tight", facecolor="white")
@@ -24,9 +25,6 @@ const IMG = {
   fa_tractos   : new URL('./assets/evidencia/fa_tractos.png',    import.meta.url).href,
   icfes        : new URL('./assets/evidencia/icfes_comparacion.png', import.meta.url).href,
   audiometria  : new URL('./assets/evidencia/audiometria.png',   import.meta.url).href,
-  shap_global  : new URL('./assets/evidencia/shap_global.png',   import.meta.url).href,
-  calibracion  : new URL('./assets/evidencia/calibracion.png',   import.meta.url).href,
-  roc_m7       : new URL('./assets/evidencia/roc_m7.png',        import.meta.url).href,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -198,12 +196,293 @@ const ShapBar = ({ item, maxAbs }) => {
   );
 };
 
+const GlobalShapChart = ({ shapData = [] }) => {
+  const displayData = shapData.slice(0, 8);
+  if (!displayData.length) {
+    return (
+      <div className="bg-white rounded-3xl border border-slate-200 p-6 text-center text-slate-500">
+        SHAP global no disponible. Carga un caso para ver los factores más influyentes.
+      </div>
+    );
+  }
+
+  const maxAbs = Math.max(...displayData.map(item => Math.abs(item.shap)));
+
+  return (
+    <div className="bg-white rounded-3xl border border-slate-200 p-6">
+      {displayData.map(item => (
+        <ShapBar key={item.feature} item={item} maxAbs={maxAbs} />
+      ))}
+      <div className="mt-5 pt-4 border-t border-slate-200 flex justify-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-500">
+        <span className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-emerald-400 rounded-sm" /> Protector
+        </span>
+        <span className="flex items-center gap-2">
+          <div className="w-3 h-3 bg-rose-400 rounded-sm" /> Factor Riesgo
+        </span>
+      </div>
+    </div>
+  );
+};
+
+const CLUSTER_PALETTE = ['#2563eb', '#f97316', '#14b8a6', '#8b5cf6', '#ec4899', '#84cc16'];
+
+const buildClusterColorMap = (points) => {
+  const clusterValues = Array.from(new Set(points.map(p => String(p.GO_i)))).sort();
+  const colorByCluster = clusterValues.reduce((acc, label, index) => {
+    acc[label] = CLUSTER_PALETTE[index % CLUSTER_PALETTE.length];
+    return acc;
+  }, {});
+  return { clusterValues, colorByCluster };
+};
+
+const PCAClusterLegend = ({ points = [], clusterLabels = {}, clusterCounts, compact = false }) => {
+  const { clusterValues, colorByCluster } = buildClusterColorMap(points);
+  if (!clusterValues.length) return null;
+
+  return (
+    <div className={compact ? 'mt-3' : 'mt-6'}>
+      <h4 className={`font-semibold text-slate-800 ${compact ? 'text-xs mb-2' : 'text-sm mb-3'}`}>
+        Clústeres GO-i
+      </h4>
+      <div className={compact ? 'space-y-1.5' : 'flex flex-wrap gap-x-6 gap-y-2'}>
+        {clusterValues.map(label => (
+          <div
+            key={label}
+            className={`flex items-center gap-2 text-slate-600 ${compact ? 'text-xs justify-between' : 'text-sm'}`}
+          >
+            <span className="flex items-center gap-2 min-w-0">
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorByCluster[label] }} />
+              <span className={compact ? 'truncate' : ''}>{clusterLabels[label] ?? `GO-${label}`}</span>
+            </span>
+            {clusterCounts && (
+              <span className="font-black text-slate-800 shrink-0">n={clusterCounts[label] ?? 0}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const PCAGlobalSummary = ({ points = [], clusterCounts = {}, clusterLabels = {}, explainedVariance = [] }) => {
+  const { clusterValues, colorByCluster } = buildClusterColorMap(points);
+  const total = Object.values(clusterCounts).reduce((sum, n) => sum + n, 0);
+
+  return (
+    <aside className="rounded-3xl border border-slate-200 bg-white p-5 space-y-5 h-fit lg:sticky lg:top-6">
+      <div>
+        <p className="text-xs uppercase font-black tracking-[0.2em] text-slate-400 mb-2">Qué muestra este gráfico</p>
+        <p className="text-sm text-slate-600 leading-relaxed">
+          PCA 2D sobre todas las variables numéricas del dataset procesado. Cada punto es un participante
+          coloreado según su etiqueta GO-i de <span className="font-semibold text-slate-800">clusters_GOi.csv</span>.
+        </p>
+      </div>
+      <div>
+        <p className="text-xs uppercase font-black tracking-[0.2em] text-slate-400 mb-3">Varianza explicada</p>
+        <div className="text-sm text-slate-700 space-y-1">
+          <div className="flex justify-between">
+            <span>PC1</span>
+            <span className="font-black">{explainedVariance[0] ?? '—'}%</span>
+          </div>
+          <div className="flex justify-between">
+            <span>PC2</span>
+            <span className="font-black">{explainedVariance[1] ?? '—'}%</span>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p className="text-xs uppercase font-black tracking-[0.2em] text-slate-400 mb-3">Clústeres GO-i</p>
+        <div className="space-y-2 text-sm text-slate-700">
+          {clusterValues.map(label => (
+            <div key={label} className="flex items-center justify-between gap-3">
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="w-3 h-3 rounded-full shrink-0" style={{ background: colorByCluster[label] }} />
+                <span className="truncate">{clusterLabels[label] ?? `GO-${label}`}</span>
+              </span>
+              <span className="font-black shrink-0">{clusterCounts[label] ?? 0}</span>
+            </div>
+          ))}
+        </div>
+        {total > 0 && (
+          <p className="text-xs text-slate-400 mt-2">{total} participantes en el gráfico</p>
+        )}
+      </div>
+    </aside>
+  );
+};
+
+const ClusterDomainCard = ({ variant }) => {
+  const pca = variant.pca;
+  const points = pca?.points ?? [];
+  const clusterLabels = points.reduce((acc, pt) => {
+    acc[String(pt.GO_i)] = pt.GO_i_label;
+    return acc;
+  }, {});
+  const { clusterValues, colorByCluster } = buildClusterColorMap(points);
+  const clusterCounts = pca?.cluster_counts ?? {};
+
+  return (
+    <article className="rounded-3xl border border-slate-200 bg-white overflow-hidden">
+      <div className="grid lg:grid-cols-[minmax(260px,320px)_minmax(0,1fr)]">
+        <div className="bg-slate-50 p-6 space-y-4 border-b lg:border-b-0 lg:border-r border-slate-200">
+          <div>
+            <p className="text-xs uppercase font-black tracking-[0.2em] text-slate-400 mb-1">{variant.title}</p>
+            <p className="text-sm text-slate-700 leading-relaxed">{variant.description}</p>
+          </div>
+          <div className="rounded-2xl bg-white border border-slate-200 p-3 text-xs">
+            <p className="font-semibold text-slate-800 mb-1">Regla de etiquetado GO-i</p>
+            <p className="text-slate-600 leading-relaxed">{variant.labelling}</p>
+          </div>
+          {clusterValues.length > 0 && (
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Clústeres en la cohorte</p>
+              <div className="space-y-2 text-sm text-slate-700">
+                {clusterValues.map(label => (
+                  <div key={label} className="flex items-center justify-between gap-2">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: colorByCluster[label] }} />
+                      <span className="truncate">{clusterLabels[label] ?? `GO-${label}`}</span>
+                    </span>
+                    <span className="font-black shrink-0">{clusterCounts[label] ?? 0}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {variant.summary ? (
+            <div className="space-y-2 text-sm text-slate-700 border-t border-slate-200 pt-3">
+              <div className="flex justify-between">
+                <span>Participantes con datos</span>
+                <span className="font-black">{variant.summary.count}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Compleción de variables</span>
+                <span className="font-black">{variant.summary.complete_pct}%</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Valores faltantes</span>
+                <span className="font-black">{variant.summary.missing_pct}%</span>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">Datos de cohorte incompletos para este dominio.</p>
+          )}
+        </div>
+        <div className="p-4 min-w-0">
+          {pca ? (
+            <PCAPlot
+              compact
+              title={`PCA ${variant.title}`}
+              subtitle={null}
+              showClusterLegend={false}
+              points={pca.points}
+              explainedVariance={pca.explained_variance}
+              clusterLabels={clusterLabels}
+              width={480}
+              height={300}
+            />
+          ) : (
+            <p className="text-sm text-slate-500 p-6 text-center">No hay proyección PCA para este dominio.</p>
+          )}
+        </div>
+      </div>
+    </article>
+  );
+};
+
+const PCAPlot = ({
+  points = [],
+  explainedVariance = [],
+  clusterLabels = {},
+  title = 'Análisis PCA de Clusters',
+  subtitle = 'Proyección PCA 2D de las muestras del proyecto usando etiquetas GO-i.',
+  width = 720,
+  height = 420,
+  compact = false,
+  hideVarianceInHeader = false,
+  clusterCounts,
+  showClusterLegend = true,
+}) => {
+  if (!points.length) {
+    return (
+      <div className="rounded-3xl border border-slate-200 bg-slate-50 p-8 text-center text-slate-500">
+        No hay datos de PCA disponibles para mostrar.
+      </div>
+    );
+  }
+
+  const xs = points.map(p => p.pc1);
+  const ys = points.map(p => p.pc2);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const pad = 32;
+  const rangeX = maxX - minX || 1;
+  const rangeY = maxY - minY || 1;
+  const scaleX = (width - pad * 2) / rangeX;
+  const scaleY = (height - pad * 2) / rangeY;
+  const { clusterValues, colorByCluster } = buildClusterColorMap(points);
+
+  return (
+    <div className="rounded-3xl border border-slate-200 bg-slate-50 p-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mb-6">
+        <div>
+          <h3 className={`font-black text-slate-900 ${compact ? 'text-lg' : 'text-2xl'}`}>{title}</h3>
+          {subtitle && (
+            <p className="text-sm text-slate-500 max-w-2xl">{subtitle}</p>
+          )}
+        </div>
+        {!hideVarianceInHeader && (
+          <div className="text-xs text-slate-500 text-right">
+            <div>PC1: {explainedVariance[0] ?? 0}%</div>
+            <div>PC2: {explainedVariance[1] ?? 0}%</div>
+          </div>
+        )}
+      </div>
+      <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ height: `${height}px` }}>
+          <rect x="0" y="0" width={width} height={height} fill="#f8fafc" />
+          {[...Array(5)].map((_, index) => {
+            const x = pad + index * ((width - 2 * pad) / 4);
+            return <line key={`gx-${index}`} x1={x} y1={pad} x2={x} y2={height - pad} stroke="#e2e8f0" strokeWidth="1" />;
+          })}
+          {[...Array(5)].map((_, index) => {
+            const y = pad + index * ((height - 2 * pad) / 4);
+            return <line key={`gy-${index}`} x1={pad} y1={y} x2={width - pad} y2={y} stroke="#e2e8f0" strokeWidth="1" />;
+          })}
+          {points.map((pt, idx) => {
+            const x = pad + (pt.pc1 - minX) * scaleX;
+            const y = height - pad - (pt.pc2 - minY) * scaleY;
+            return (
+              <circle key={`${pt.code}-${idx}`} cx={x} cy={y} r="4.5"
+                      fill={colorByCluster[String(pt.GO_i)]} stroke="#ffffff" strokeWidth="1.4">
+                <title>{`Código ${pt.code} — ${pt.GO_i_label} — PC1 ${pt.pc1.toFixed(2)}, PC2 ${pt.pc2.toFixed(2)}`}</title>
+              </circle>
+            );
+          })}
+        </svg>
+      </div>
+      {showClusterLegend && (
+        <PCAClusterLegend
+          points={points}
+          clusterLabels={clusterLabels}
+          clusterCounts={clusterCounts}
+          compact={compact}
+        />
+      )}
+    </div>
+  );
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MAIN APP
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
   const [formData, setFormData]       = useState(EMPTY_FORM);
   const [isFormOpen, setIsFormOpen]   = useState(false);
+  const [activeSection, setActiveSection] = useState('predictor');
   const [activeTab, setActiveTab]     = useState('global');
   const [isLoading, setIsLoading]     = useState(false);
   const [results, setResults]         = useState(null);
@@ -212,6 +491,12 @@ export default function App() {
   const [evidOverride, setEvidOverride] = useState(null);
   const [modalImg, setModalImg]         = useState(null);   // {src, alt}
   const [apiStatus, setApiStatus]     = useState('unknown'); // 'ok' | 'error' | 'unknown'
+  const [pcaData, setPcaData]             = useState(null);
+  const [pcaLoading, setPcaLoading]       = useState(false);
+  const [pcaError, setPcaError]           = useState(null);
+  const [domainAnalysis, setDomainAnalysis] = useState(null);
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainError, setDomainError]     = useState(null);
   const fileInputRef = useRef(null);
 
   // Check backend health on mount
@@ -220,6 +505,40 @@ export default function App() {
       .then(r => r.json())
       .then(d => setApiStatus(d.modelos_cargados?.includes('global') ? 'ok' : 'partial'))
       .catch(() => setApiStatus('error'));
+  }, []);
+
+  useEffect(() => {
+    setPcaLoading(true);
+    fetch(`${API_URL}/api/pca-clusters`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setPcaData(data);
+        setPcaError(null);
+      })
+      .catch((err) => {
+        setPcaError(err.message || 'No se pudo cargar el análisis de PCA');
+      })
+      .finally(() => setPcaLoading(false));
+  }, []);
+
+  useEffect(() => {
+    setDomainLoading(true);
+    fetch(`${API_URL}/api/cluster-domain-analysis`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`Error ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        setDomainAnalysis(data);
+        setDomainError(null);
+      })
+      .catch((err) => {
+        setDomainError(err.message || 'No se pudo cargar el análisis de dominios de clustering');
+      })
+      .finally(() => setDomainLoading(false));
   }, []);
 
   const handleChange = (e) => {
@@ -704,6 +1023,28 @@ export default function App() {
         </div>
       </div>
 
+      <div className="max-w-7xl mx-auto mb-8">
+        <div className="flex flex-col sm:flex-row items-center gap-3">
+          <button onClick={() => setActiveSection('predictor')}
+                  className={`px-6 py-3 rounded-2xl font-black text-sm transition-all ${
+                    activeSection === 'predictor'
+                      ? 'bg-blue-700 text-white shadow-lg'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>
+            KMC Predictor
+          </button>
+          <button onClick={() => setActiveSection('analysis')}
+                  className={`px-6 py-3 rounded-2xl font-black text-sm transition-all ${
+                    activeSection === 'analysis'
+                      ? 'bg-slate-900 text-white shadow-lg'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}>
+            Analysis Results
+          </button>
+        </div>
+      </div>
+
+      {activeSection === 'predictor' ? (
       <div className="max-w-7xl mx-auto grid grid-cols-1 xl:grid-cols-12 gap-8 w-full flex-grow">
 
         {/* ── LEFT PANEL ───────────────────────────────────────────────── */}
@@ -894,7 +1235,7 @@ export default function App() {
             )}
 
             {/* Empty state */}
-            {!results && !isLoading && !apiError && (
+            {!results && !isLoading && !apiError && activeTab !== 'analisis' && (
               <div className="flex-grow flex flex-col items-center justify-center opacity-20 grayscale">
                 <ActivitySquare className="w-24 h-24 mb-4" />
                 <p className="font-black uppercase tracking-widest text-sm">Esperando Datos Clínicos</p>
@@ -1435,12 +1776,7 @@ export default function App() {
                           </p>
                         </div>
                       </div>
-                      <EvidenceImg
-                        src={IMG.shap_global}
-                        alt="SHAP beeswarm — importancia de variables · cohorte KMC-400-20y"
-                        caption="Importancia SHAP en n=383 pacientes · rojo = mayor riesgo · azul = menor riesgo · Modelo M7"
-                        onZoom={(src,alt) => setModalImg({src,alt})}
-                      />
+                      <GlobalShapChart shapData={allShap} />
                     </div>
 
 
@@ -1451,6 +1787,84 @@ export default function App() {
           </div>
         </div>
       </div>
+      ) : (
+      <div className="max-w-7xl mx-auto bg-white rounded-[2.5rem] border border-slate-200 shadow-sm p-8 md:p-10 min-h-[500px]">
+        <div className="text-center mb-8">
+          <h2 className="text-3xl font-black text-slate-900 tracking-tight">Análisis de clusters</h2>
+          <p className="text-slate-500 text-sm max-w-3xl mx-auto">
+            Esta sección es independiente del KMC Predictor. Aquí puedes revisar la visualización PCA
+            de los clusters del proyecto y comprender la estructura global del dataset.
+          </p>
+        </div>
+        {pcaLoading ? (
+          <div className="flex items-center justify-center h-72 text-slate-500">
+            <Loader2 className="w-12 h-12 text-blue-600 animate-spin mr-3" />
+            Cargando análisis de PCA...
+          </div>
+        ) : pcaError ? (
+          <div className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-rose-700">
+            <p className="font-black mb-2">No se pudo cargar el análisis del proyecto</p>
+            <p className="text-sm">{pcaError}</p>
+          </div>
+        ) : (
+          <div className="space-y-10">
+            <section className="space-y-4">
+              <div>
+                <p className="text-sm font-black text-slate-900">PCA global del dataset</p>
+                <p className="text-sm text-slate-500">
+                  Vista general con todas las variables numéricas disponibles. El panel lateral resume
+                  clústeres y varianza del mismo gráfico.
+                </p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px] items-start">
+                <PCAPlot
+                  title="PCA global"
+                  subtitle={null}
+                  compact
+                  hideVarianceInHeader
+                  showClusterLegend={false}
+                  points={pcaData?.points ?? []}
+                  explainedVariance={pcaData?.explained_variance}
+                  clusterLabels={pcaData?.cluster_labels}
+                />
+                <PCAGlobalSummary
+                  points={pcaData?.points ?? []}
+                  clusterCounts={pcaData?.cluster_counts}
+                  clusterLabels={pcaData?.cluster_labels}
+                  explainedVariance={pcaData?.explained_variance}
+                />
+              </div>
+            </section>
+            <section className="space-y-4">
+              <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+                <div>
+                  <p className="text-sm font-black text-slate-900">Clústeres por dominio</p>
+                  <p className="text-sm text-slate-500">
+                    Cada ficha reúne la definición GO-i, la distribución en cohorte y el PCA del mismo contexto (CVLT, TAP o WASI).
+                  </p>
+                </div>
+                {domainLoading && (
+                  <div className="text-xs uppercase font-semibold text-blue-600">Cargando dominios...</div>
+                )}
+              </div>
+              {domainError ? (
+                <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-700 text-sm">
+                  {domainError}
+                </div>
+              ) : domainAnalysis?.variants?.length ? (
+                <div className="space-y-6">
+                  {domainAnalysis.variants.map(variant => (
+                    <ClusterDomainCard key={variant.key} variant={variant} />
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-slate-500">No hay fichas de dominio disponibles.</p>
+              )}
+            </section>
+          </div>
+        )}
+      </div>
+      )}
 
       {/* ── FOOTER ─────────────────────────────────────────────────────── */}
       <footer className="max-w-7xl mx-auto w-full mt-6 text-center text-xs text-slate-400 font-medium border-t border-slate-200 pt-5 pb-2">
@@ -1462,3 +1876,4 @@ export default function App() {
     </div>
   );
 }
+

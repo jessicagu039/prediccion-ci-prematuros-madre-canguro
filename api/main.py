@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional
+import csv
 import joblib
 import numpy as np
 import math
@@ -19,6 +20,10 @@ import logging
 import threading
 import time
 import warnings
+import statistics
+from sklearn.decomposition import PCA
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 warnings.filterwarnings('ignore', category=UserWarning, module='sklearn')
 warnings.filterwarnings('ignore', category=UserWarning, module='xgboost')
 
@@ -52,12 +57,74 @@ def fenton_z(pc_cm: float, eg_weeks: float) -> Optional[float]:
 BUNDLES: dict = {}
 LOAD_STATUS = {"state": "loading", "errors": [], "loaded": []}
 
+BASE_DIR = os.path.dirname(__file__)
 BUNDLE_FILES = {
-    "global": "kmc20_model_bundle_calibrated.joblib",
-    "wasi"  : "m8_modelo_binary_best.joblib",
-    "tap"   : "m9_tap_bundle.joblib",
-    "cvlt"  : "m10_cvlt_bundle.joblib",
+    "global": os.path.join(BASE_DIR, "kmc20_model_bundle_calibrated.joblib"),
+    "wasi": os.path.join(BASE_DIR, "m8_modelo_binary_best.joblib"),
+    "tap": os.path.join(BASE_DIR, "m9_tap_bundle.joblib"),
+    "cvlt": os.path.join(BASE_DIR, "m10_cvlt_bundle.joblib"),
 }
+def _resolve_app_data_path(*parts):
+    root = os.path.dirname(__file__)
+    candidates = [
+        os.path.normpath(os.path.join(root, '..', 'app', *parts)),
+        os.path.normpath(os.path.join(root, '..', 'src', 'app', *parts)),
+        os.path.normpath(os.path.join(root, '..', 'src', *parts)),
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            return path
+    raise FileNotFoundError(
+        'No se encontró el archivo de datos. Buscado en: ' + ', '.join(candidates)
+    )
+CLUSTER_DOMAIN_VARIANTS = [
+    {
+        "key": "cvlt",
+        "title": "CVLT",
+        "module": "CVLT",
+        "description": "Agrupa perfiles de memoria verbal usando 8 variables CVLT seleccionadas en el notebook de clustering.",
+        "labelling": "GO-1 = mayor memoria verbal y mayor FSIQ; GO-2 = menor memoria verbal.",
+        "variables": [
+            "CVLT_Trial1a4Total",
+            "CVLT_ShortDelay",
+            "CVLT_LongDelay",
+            "CVLT_LongDelayCued",
+            "CVLT_TotalIntrusions",
+            "CVLT_TotalRepetitions",
+            "CVLT_Hits",
+            "CVLT_False_Positives",
+        ],
+        "notebook": "Clustering_CVLT_GOi_v1.ipynb",
+    },
+    {
+        "key": "tap",
+        "title": "TAP",
+        "module": "TAP",
+        "description": "Agrupa perfiles atencionales usando variables de memoria de trabajo y atención sostenida.",
+        "labelling": "GO-1 = mejor rendimiento en memoria de trabajo y atención; GO-2 = peor desempeño atencional.",
+        "variables": [
+            "TAP_WM2_OMT0",
+            "TAP_WM2_ERT0",
+            "TAP_SA2_ERT3",
+            "TAP_SA2_OMT3",
+            "TAP_FN_TOTALPERFORMANCEINDEX",
+            "TAP_GO1_ERT0",
+        ],
+        "notebook": "Clustering_TAP_GOi_v1.ipynb",
+    },
+    {
+        "key": "wasi",
+        "title": "WASI",
+        "module": "WASI",
+        "description": "Agrupa el rendimiento global WASI en dos clústeres GO-i basados en FSIQ.",
+        "labelling": "GO-1 = mayor puntaje FSIQ WASI; GO-2 = menor FSIQ.",
+        "variables": [
+            "WASI_FullScale4compositescore",
+        ],
+        "notebook": "Clustering_WASI_GOi_v1.ipynb",
+    },
+]
+
 
 def _fmt_size(path):
     try:
@@ -264,6 +331,276 @@ def run_bundle(name, patient_dict):
         logger.error(f"[{name}] predict error: {e} | bundle: {bkeys}")
         return None   # No re-raise — dashboard muestra "no disponible"
 
+PCA_CLUSTER_CACHE = None
+
+
+def _parse_float(value):
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+    if value == "" or value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
+def _bucket_counts(values, bins=5):
+    if not values:
+        return []
+    mn = min(values)
+    mx = max(values)
+    if mn == mx:
+        return [{"range": f"{mn:.2f}", "count": len(values)}]
+    step = (mx - mn) / bins
+    edges = [mn + i * step for i in range(bins + 1)]
+    counts = [0] * bins
+    for value in values:
+        index = min(int((value - mn) / step), bins - 1)
+        counts[index] += 1
+    buckets = []
+    for i in range(bins):
+        lo = edges[i]
+        hi = edges[i + 1]
+        buckets.append({
+            "range": f"{lo:.2f} - {hi:.2f}",
+            "count": counts[i],
+        })
+    return buckets
+
+
+def _percentile(sorted_values, p):
+    if not sorted_values:
+        return None
+    n = len(sorted_values)
+    idx = int(round((n - 1) * p / 100))
+    return sorted_values[max(0, min(idx, n - 1))]
+
+
+def _load_cluster_domain_analysis():
+    dataset_path = _resolve_app_data_path('data', 'processed', 'kmc_dataset_procesado_completo.csv')
+    cluster_path = _resolve_app_data_path('data', 'processed', 'clusters_GOi.csv')
+
+    with open(cluster_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        clusters = {
+            row['code'].strip(): {
+                'GO_i': int(_parse_float(row['GO_i']) or 0),
+                'GO_i_label': row.get('GO_i_label', '').strip() or f"GO-{row.get('GO_i', '').strip()}",
+            }
+            for row in reader if row.get('code') and row.get('GO_i')
+        }
+
+    with open(dataset_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        rows = []
+        for row in reader:
+            code = (row.get('code') or '').strip()
+            if code and code in clusters:
+                rows.append({
+                    'code': code,
+                    'cluster': clusters[code],
+                    'data': row,
+                })
+
+    if not rows:
+        raise ValueError('No hay participantes con etiquetas de cluster disponibles.')
+
+    variants = []
+    for variant in CLUSTER_DOMAIN_VARIANTS:
+        values = []
+        complete = 0
+        pca_rows = []
+        for row in rows:
+            vals = [_parse_float(row['data'].get(col)) for col in variant['variables']]
+            if all(v is not None for v in vals):
+                complete += 1
+            if len(vals) == 1:
+                if vals[0] is not None:
+                    values.append(vals[0])
+            else:
+                if any(v is not None for v in vals):
+                    values.append(sum(v for v in vals if v is not None) / len([v for v in vals if v is not None]))
+            pca_rows.append((row['code'], row['cluster'], vals))
+
+        total = len(rows)
+        missing_pct = round(100.0 * (1 - complete / total), 1) if total else 0.0
+        values.sort()
+        summary = None
+        if values:
+            summary = {
+                "count": len(values),
+                "complete_pct": round(100.0 * complete / total, 1) if total else 0.0,
+                "missing_pct": missing_pct,
+                "mean": round(statistics.mean(values), 2),
+                "min": round(values[0], 2),
+                "max": round(values[-1], 2),
+                "median": round(_percentile(values, 50), 2),
+                "p25": round(_percentile(values, 25), 2),
+                "p75": round(_percentile(values, 75), 2),
+                "buckets": _bucket_counts(values, bins=5),
+            }
+
+        pca_result = None
+        feature_count = len(variant['variables'])
+        if feature_count > 0:
+            X = np.full((len(pca_rows), feature_count), np.nan, dtype=float)
+            for i, (_, _, vals) in enumerate(pca_rows):
+                for j, val in enumerate(vals):
+                    X[i, j] = val if val is not None else np.nan
+            imputer = SimpleImputer(strategy='median')
+            X_imp = imputer.fit_transform(X)
+            scaler = StandardScaler()
+            X_scaled = scaler.fit_transform(X_imp)
+
+            if feature_count == 1:
+                pc1 = X_scaled[:, 0].tolist()
+                pc2 = [0.0] * len(pc1)
+                explained_variance = [100.0, 0.0]
+            else:
+                pca = PCA(n_components=2, random_state=42)
+                X_pca = pca.fit_transform(X_scaled)
+                pc1 = X_pca[:, 0].tolist()
+                pc2 = X_pca[:, 1].tolist()
+                explained_variance = [round(float(v) * 100, 2) for v in pca.explained_variance_ratio_]
+                if len(explained_variance) < 2:
+                    explained_variance += [0.0]
+
+            points = [
+                {
+                    'code': code,
+                    'GO_i': int(cluster['GO_i']),
+                    'GO_i_label': cluster['GO_i_label'],
+                    'pc1': float(pc1[i]),
+                    'pc2': float(pc2[i]),
+                }
+                for i, (code, cluster, _) in enumerate(pca_rows)
+            ]
+
+            cluster_counts = {}
+            for _, cluster, _ in pca_rows:
+                key = str(cluster['GO_i'])
+                cluster_counts[key] = cluster_counts.get(key, 0) + 1
+
+            pca_result = {
+                'points': points,
+                'explained_variance': explained_variance,
+                'cluster_counts': cluster_counts,
+            }
+
+        variants.append({
+            "key": variant['key'],
+            "title": variant['title'],
+            "module": variant['module'],
+            "description": variant['description'],
+            "labelling": variant['labelling'],
+            "variables": variant['variables'],
+            "notebook": variant['notebook'],
+            "summary": summary,
+            "pca": pca_result,
+        })
+
+    return {
+        "note": "Análisis estático derivado de las definiciones de clusters en los notebooks de CVLT, TAP y WASI.",
+        "variants": variants,
+    }
+
+
+def _load_pca_cluster_data():
+    global PCA_CLUSTER_CACHE
+    if PCA_CLUSTER_CACHE is not None:
+        return PCA_CLUSTER_CACHE
+
+    dataset_path = _resolve_app_data_path('data', 'processed', 'kmc_dataset_procesado_completo.csv')
+    cluster_path = _resolve_app_data_path('data', 'processed', 'clusters_GOi.csv')
+
+    if not os.path.exists(dataset_path):
+        raise FileNotFoundError(f"Dataset no encontrado: {dataset_path}")
+    if not os.path.exists(cluster_path):
+        raise FileNotFoundError(f"Cluster labels no encontrados: {cluster_path}")
+
+    with open(cluster_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        clusters = {
+            row['code'].strip(): {
+                'GO_i': int(row['GO_i']),
+                'GO_i_label': row.get('GO_i_label', '').strip() or f"GO-{row['GO_i']}",
+            }
+            for row in reader if row.get('code') and row.get('GO_i')
+        }
+
+    rows = []
+    codes = []
+    labels = []
+    with open(dataset_path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        candidate_cols = [c for c in reader.fieldnames if c not in {'code', 'ubicac', 'preterm', 'lessthan1801g'}]
+        for row in reader:
+            code = (row.get('code') or '').strip()
+            if not code or code not in clusters:
+                continue
+            codes.append(code)
+            labels.append(clusters[code]['GO_i'])
+            rows.append(row)
+
+    if not rows:
+        raise ValueError('No hay participantes con etiquetas de cluster disponibles.')
+
+    nonmissing_threshold = max(20, int(len(rows) * 0.20))
+    numeric_cols = []
+    for col in candidate_cols:
+        nonmissing = 0
+        for row in rows:
+            if _parse_float(row.get(col)) is not None:
+                nonmissing += 1
+        if nonmissing >= nonmissing_threshold:
+            numeric_cols.append(col)
+
+    if len(numeric_cols) < 2:
+        raise ValueError('No se encontraron suficientes columnas numéricas para PCA.')
+
+    X = np.full((len(rows), len(numeric_cols)), np.nan, dtype=float)
+    for i, row in enumerate(rows):
+        for j, col in enumerate(numeric_cols):
+            value = _parse_float(row.get(col))
+            X[i, j] = value if value is not None else np.nan
+
+    imputer = SimpleImputer(strategy='median')
+    X_imp = imputer.fit_transform(X)
+    scaler = StandardScaler()
+    X_scaled = scaler.fit_transform(X_imp)
+
+    pca = PCA(n_components=2, random_state=42)
+    X_pca = pca.fit_transform(X_scaled)
+
+    points = [
+        {
+            'code': code,
+            'GO_i': int(label),
+            'GO_i_label': clusters[code]['GO_i_label'],
+            'pc1': float(coords[0]),
+            'pc2': float(coords[1]),
+        }
+        for code, label, coords in zip(codes, labels, X_pca)
+    ]
+
+    cluster_counts = {}
+    cluster_labels = {}
+    for code, label in zip(codes, labels):
+        key = str(label)
+        cluster_counts[key] = cluster_counts.get(key, 0) + 1
+        cluster_labels[key] = clusters[code]['GO_i_label']
+
+    PCA_CLUSTER_CACHE = {
+        'points': points,
+        'explained_variance': [round(float(v) * 100, 2) for v in pca.explained_variance_ratio_],
+        'cluster_counts': cluster_counts,
+        'cluster_labels': cluster_labels,
+    }
+    return PCA_CLUSTER_CACHE
+
 
 def run_shap(patient_dict: dict):
     """
@@ -388,6 +725,82 @@ def run_shap(patient_dict: dict):
     except Exception as e:
         logger.warning(f"SHAP fallback error: {e}")
         return None
+
+
+        logger.info(f"SHAP OK — TreeExplainer — top={features[0]['label_es'] if features else '—'}")
+        return {
+            "base_prob"       : round(base_prob, 4),
+            "shap_values"     : features,
+            "top_risk_factors": [f for f in features if f["shap"] > 0][:5],
+            "top_protective"  : [f for f in features if f["shap"] < 0][:3],
+            "method"          : "TreeExplainer",
+        }
+
+    except Exception as e:
+        logger.warning(f"TreeExplainer falló: {e}")
+
+    # Fallback: feature_importances_
+    try:
+        fi = (xgb_clf.feature_importances_
+              if hasattr(xgb_clf, "feature_importances_") else None)
+        if fi is None:
+            return None
+
+        med = imputer.statistics_ if hasattr(imputer, "statistics_") else np.zeros(len(feat_cols))
+        pv  = np.array([patient_dict.get(c, float("nan")) for c in feat_cols], dtype=float)
+        pv[np.isnan(pv)] = med[np.isnan(pv)]
+
+        DIRECTION = {
+            "F_delta_waz_3m_12m":-1,"SCB_nivm1":-1,"F_catchup_hc_fenton":-1,
+            "PMD_coaudl6":-1,"PMD_RSM6":-1,"SCB_percap1":-1,"EX41_talla8":-1,
+            "NEO_fotote6":1,"PMD_coloco12":-1,"NEO_totoxidias":1,
+            "F_z_hc_birth_fenton":-1,"F_delta_haz_3m_12m":-1,"SCB_nivp1":-1,
+            "NEO_HOSP":1,"PMD_cogrif6":-1,
+        }
+
+        features = sorted([
+            {"feature": col,
+             "label_es": LABELS.get(col, col),
+             "shap": round(float(fi[i]) * DIRECTION.get(col,1) *
+                           (1 if (pv[i]-med[i])*DIRECTION.get(col,1) > 0 else -1), 5)}
+            for i, col in enumerate(feat_cols) if i < len(fi) and fi[i] > 0.001
+        ], key=lambda x: abs(x["shap"]), reverse=True)
+
+        logger.info("SHAP fallback — feature_importances_")
+        return {
+            "base_prob"       : 0.0,
+            "shap_values"     : features,
+            "top_risk_factors": [f for f in features if f["shap"] > 0][:5],
+            "top_protective"  : [f for f in features if f["shap"] < 0][:3],
+            "method"          : "feature_importances_fallback",
+        }
+    except Exception as e:
+        logger.warning(f"SHAP fallback error: {e}")
+        return None
+
+
+@app.get("/api/pca-clusters")
+def pca_clusters():
+    try:
+        return _load_pca_cluster_data()
+    except FileNotFoundError as e:
+        raise HTTPException(404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(500, detail=str(e))
+    except Exception as e:
+        logger.exception("Error al generar PCA de clusters")
+        raise HTTPException(500, detail="Error interno al cargar datos de PCA")
+
+
+@app.get("/api/cluster-domain-analysis")
+def cluster_domain_analysis():
+    try:
+        return _load_cluster_domain_analysis()
+    except FileNotFoundError as e:
+        raise HTTPException(404, detail=str(e))
+    except Exception as e:
+        logger.exception("Error al cargar análisis de clusters por dominio")
+        raise HTTPException(500, detail="Error interno al cargar el análisis de dominios de clustering")
 
 
 @app.get("/health")
